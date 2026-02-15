@@ -28,5 +28,5 @@ To prevent repeat voting and abuse, two layers of checks are implemented:
 - **SQLite Concurrency**: While `better-sqlite3` is fast (WAL mode enabled), for ultra-high scale, a separate DB service like PostgreSQL would be better.
 
 ## Deployment
-This project is configured to be deployed as a monorepo. The Node.js server serves the built React frontend.
-See `DEPLOY.md` for instructions.
+This project is configured to be deployed as a monorepo (Render/Railway) OR as a split deployment (Vercel + Render).
+See `DEPLOY.md` for detailed instructions on both methods.
