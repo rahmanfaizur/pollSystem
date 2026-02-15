@@ -1,0 +1,23 @@
+{
+    "name": "poll-system",
+    "version": "1.0.0",
+    "description": "Real-time polling system",
+    "scripts": {
+        "start": "cd server && npx tsx server.ts",
+        "build": "cd client && npm install && npm run build && cd ../server && npm install",
+        "dev": "concurrently \"cd server && npx tsx server.ts\" \"cd client && npm run dev\""
+    },
+    "dependencies": {
+        "better-sqlite3": "^9.4.0",
+        "cors": "^2.8.5",
+        "express": "^4.18.2",
+        "nanoid": "^5.0.0",
+        "socket.io": "^4.7.4"
+    },
+    "devDependencies": {
+        "concurrently": "^8.2.2"
+    },
+    "engines": {
+        "node": ">=18.0.0"
+    }
+}
