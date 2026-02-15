@@ -1,6 +1,8 @@
 import { useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 
+const API_URL = import.meta.env.VITE_API_URL || '';
+
 const CreatePoll = () => {
     const [question, setQuestion] = useState('');
     const [options, setOptions] = useState(['', '']);
@@ -32,7 +34,7 @@ const CreatePoll = () => {
         }
 
         try {
-            const response = await fetch('/api/polls', {
+            const response = await fetch(`${API_URL}/api/polls`, {
                 method: 'POST',
                 headers: {
                     'Content-Type': 'application/json',

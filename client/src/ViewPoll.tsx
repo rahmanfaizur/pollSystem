@@ -2,7 +2,8 @@ import { useEffect, useState } from 'react';
 import { useParams } from 'react-router-dom';
 import { io } from 'socket.io-client';
 
-const socket = io(); // Auto-detects host
+const API_URL = import.meta.env.VITE_API_URL || '';
+const socket = io(API_URL);
 
 interface PollOption {
     id: number;
@@ -32,7 +33,7 @@ const ViewPoll = () => {
         }
 
         // Fetch initial poll data
-        fetch(`/api/polls/${id}`)
+        fetch(`${API_URL}/api/polls/${id}`)
             .then(res => res.json())
             .then(data => {
                 setPoll(data);
