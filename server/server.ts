@@ -14,15 +14,12 @@ const app = express();
 const httpServer = createServer(app);
 const io = new Server(httpServer, {
     cors: {
-        origin: ["http://localhost:5173", "http://localhost:5174", "https://poll-system-sand-ten.vercel.app"],
+        origin: "*", // Allow all origins for dev/testing
         methods: ["GET", "POST"]
     }
 });
 
-app.use(cors({
-    origin: ["http://localhost:5173", "http://localhost:5174", "https://poll-system-sand-ten.vercel.app"],
-    methods: ["GET", "POST"]
-}));
+app.use(cors()); // Allow all origins
 app.use(express.json());
 
 // Basic health check route
