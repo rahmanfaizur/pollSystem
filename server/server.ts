@@ -2,7 +2,7 @@ import express, { Request, Response } from 'express';
 import { createServer } from 'http';
 import { Server, Socket } from 'socket.io';
 import cors from 'cors';
-import { db, init } from './db.js';
+import { pool, init } from './db.js';
 import { customAlphabet } from 'nanoid';
 import path from 'path';
 import { fileURLToPath } from 'url';
@@ -50,11 +50,11 @@ interface Option {
 
 interface VoteCount {
     option_id: number;
-    count: number;
+    count: string; // Postgres COUNT returns string (bigint)
 }
 
 // API Routes
-app.post('/api/polls', (req: Request, res: Response) => {
+app.post('/api/polls', async (req: Request, res: Response) => {
     const { question, options } = req.body as PollRequest;
     if (!question || !options || options.length < 2) {
         res.status(400).json({ error: 'Invalid poll data' });
@@ -62,49 +62,58 @@ app.post('/api/polls', (req: Request, res: Response) => {
     }
 
     const pollId = nanoid();
-    const insertPoll = db.prepare('INSERT INTO polls (id, question) VALUES (?, ?)');
-    const insertOption = db.prepare('INSERT INTO options (poll_id, text) VALUES (?, ?)');
-
-    const transaction = db.transaction(() => {
-        insertPoll.run(pollId, question);
-        for (const optionUserText of options) {
-            insertOption.run(pollId, optionUserText);
-        }
-    });
+    const client = await pool.connect();
 
     try {
-        transaction();
+        await client.query('BEGIN');
+
+        await client.query('INSERT INTO polls (id, question) VALUES ($1, $2)', [pollId, question]);
+
+        for (const optionUserText of options) {
+            await client.query('INSERT INTO options (poll_id, text) VALUES ($1, $2)', [pollId, optionUserText]);
+        }
+
+        await client.query('COMMIT');
         res.json({ id: pollId });
     } catch (error) {
+        await client.query('ROLLBACK');
         console.error(error);
         res.status(500).json({ error: 'Failed to create poll' });
+    } finally {
+        client.release();
     }
 });
 
-app.get('/api/polls/:id', (req: Request, res: Response) => {
+app.get('/api/polls/:id', async (req: Request, res: Response) => {
     const { id } = req.params;
-    const getPoll = db.prepare('SELECT * FROM polls WHERE id = ?');
-    const getOptions = db.prepare('SELECT * FROM options WHERE poll_id = ?');
 
-    const poll = getPoll.get(id);
-    if (!poll) {
-        res.status(404).json({ error: 'Poll not found' });
-        return;
+    try {
+        const pollResult = await pool.query('SELECT * FROM polls WHERE id = $1', [id]);
+        const poll = pollResult.rows[0];
+
+        if (!poll) {
+            res.status(404).json({ error: 'Poll not found' });
+            return;
+        }
+
+        const optionsResult = await pool.query('SELECT * FROM options WHERE poll_id = $1', [id]);
+        const options = optionsResult.rows as Option[];
+
+        // Calculate results
+        const votesResult = await pool.query('SELECT option_id, COUNT(*) as count FROM votes WHERE poll_id = $1 GROUP BY option_id', [id]);
+        const voteCounts = votesResult.rows as VoteCount[];
+
+        // Map counts to options
+        const optionsWithVotes = options.map((opt) => {
+            const vote = voteCounts.find((v) => v.option_id === opt.id);
+            return { ...opt, votes: vote ? parseInt(vote.count) : 0 };
+        });
+
+        res.json({ ...poll, options: optionsWithVotes });
+    } catch (err) {
+        console.error(err);
+        res.status(500).json({ error: 'Failed to fetch poll' });
     }
-
-    const options = getOptions.all(id) as Option[];
-
-    // Calculate results
-    const getVotes = db.prepare('SELECT option_id, COUNT(*) as count FROM votes WHERE poll_id = ? GROUP BY option_id');
-    const voteCounts = getVotes.all(id) as VoteCount[];
-
-    // Map counts to options
-    const optionsWithVotes = options.map((opt) => {
-        const vote = voteCounts.find((v) => v.option_id === opt.id);
-        return { ...opt, votes: vote ? vote.count : 0 };
-    });
-
-    res.json({ ...poll, options: optionsWithVotes });
 });
 
 // Catch-all handler for any request that doesn't match the above
@@ -126,28 +135,32 @@ io.on('connection', (socket: Socket) => {
         deviceId?: string;
     }
 
-    socket.on('vote', ({ pollId, optionId, deviceId }: VotePayload) => {
+    socket.on('vote', async ({ pollId, optionId, deviceId }: VotePayload) => {
         const clientIp = socket.handshake.address;
 
         // Check IP fairness
-        const checkIp = db.prepare('SELECT id FROM votes WHERE poll_id = ? AND ip_address = ?');
-        const existingVoteIp = checkIp.get(pollId, clientIp);
-
-        if (existingVoteIp) {
-            socket.emit('error', 'You have already voted from this IP address.');
-            return;
+        // ALLOW_LOCAL_VOTING env var can be set to 'true' to bypass IP check in dev
+        if (process.env.ALLOW_LOCAL_VOTING !== 'true') {
+            try {
+                const checkIp = await pool.query('SELECT id FROM votes WHERE poll_id = $1 AND ip_address = $2', [pollId, clientIp]);
+                if (checkIp.rows.length > 0) {
+                    socket.emit('error', 'You have already voted from this IP address.');
+                    return;
+                }
+            } catch (err) {
+                console.error("Error checking IP:", err);
+            }
         }
 
         try {
-            const insertVote = db.prepare('INSERT INTO votes (poll_id, option_id, ip_address) VALUES (?, ?, ?)');
-            insertVote.run(pollId, optionId, clientIp);
+            await pool.query('INSERT INTO votes (poll_id, option_id, ip_address) VALUES ($1, $2, $3)', [pollId, optionId, clientIp]);
 
             // Broadcast update
-            const getVotes = db.prepare('SELECT option_id, COUNT(*) as count FROM votes WHERE poll_id = ? GROUP BY option_id');
-            const voteCounts = getVotes.all(pollId) as VoteCount[];
+            const votesResult = await pool.query('SELECT option_id, COUNT(*) as count FROM votes WHERE poll_id = $1 GROUP BY option_id', [pollId]);
+            const voteCounts = votesResult.rows as VoteCount[];
 
             const results: Record<number, number> = {};
-            voteCounts.forEach((v) => results[v.option_id] = v.count);
+            voteCounts.forEach((v) => results[v.option_id] = parseInt(v.count));
 
             io.to(pollId).emit('update_results', results);
 
@@ -166,3 +179,4 @@ const PORT = process.env.PORT || 3000;
 httpServer.listen(PORT, () => {
     console.log(`Server running on port ${PORT}`);
 });
+
