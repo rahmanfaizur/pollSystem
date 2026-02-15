@@ -34,10 +34,19 @@ export async function init(): Promise<void> {
         poll_id TEXT NOT NULL,
         option_id INTEGER NOT NULL,
         ip_address TEXT,
+        voter_id TEXT, -- New column for browser-based tracking
         created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
         FOREIGN KEY (poll_id) REFERENCES polls(id) ON DELETE CASCADE,
         FOREIGN KEY (option_id) REFERENCES options(id) ON DELETE CASCADE
       );
+
+      -- Attempt to add voter_id column if it doesn't exist (for existing tables)
+      DO $$
+      BEGIN
+          IF NOT EXISTS (SELECT 1 FROM information_schema.columns WHERE table_name='votes' AND column_name='voter_id') THEN
+              ALTER TABLE votes ADD COLUMN voter_id TEXT;
+          END IF;
+      END $$;
     `);
     console.log("Database initialized successfully");
   } catch (err) {

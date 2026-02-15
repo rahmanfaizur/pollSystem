@@ -130,27 +130,34 @@ io.on('connection', (socket: Socket) => {
         pollId: string;
         optionId: number;
         deviceId?: string;
+        voterId: string; // New required field
     }
 
-    socket.on('vote', async ({ pollId, optionId, deviceId }: VotePayload) => {
-        const clientIp = socket.handshake.address;
+    socket.on('vote', async ({ pollId, optionId, voterId }: VotePayload) => {
+        // const clientIp = socket.handshake.address; // No longer used for restriction
 
-        // Check IP fairness
-        // ALLOW_LOCAL_VOTING env var can be set to 'true' to bypass IP check in dev
+        // Check if voterId is present
+        if (!voterId) {
+            socket.emit('error', 'Voter ID is missing.');
+            return;
+        }
+
+        // Check fairness by Voter ID
         if (process.env.ALLOW_LOCAL_VOTING !== 'true') {
             try {
-                const checkIp = await pool.query('SELECT id FROM votes WHERE poll_id = $1 AND ip_address = $2', [pollId, clientIp]);
-                if (checkIp.rows.length > 0) {
-                    socket.emit('error', 'You have already voted from this IP address.');
+                const checkVote = await pool.query('SELECT id FROM votes WHERE poll_id = $1 AND voter_id = $2', [pollId, voterId]);
+                if (checkVote.rows.length > 0) {
+                    socket.emit('error', 'You have already voted in this poll.');
                     return;
                 }
             } catch (err) {
-                console.error("Error checking IP:", err);
+                console.error("Error checking vote:", err);
             }
         }
 
         try {
-            await pool.query('INSERT INTO votes (poll_id, option_id, ip_address) VALUES ($1, $2, $3)', [pollId, optionId, clientIp]);
+            // Updated INSERT to include voterId
+            await pool.query('INSERT INTO votes (poll_id, option_id, voter_id) VALUES ($1, $2, $3)', [pollId, optionId, voterId]);
 
             // Broadcast update
             const votesResult = await pool.query('SELECT option_id, COUNT(*) as count FROM votes WHERE poll_id = $1 GROUP BY option_id', [pollId]);

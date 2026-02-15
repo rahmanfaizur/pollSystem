@@ -32,6 +32,13 @@ const ViewPoll = () => {
             setHasVoted(true);
         }
 
+        // Ensure voterId exists
+        let voterId = localStorage.getItem('voterId');
+        if (!voterId) {
+            voterId = crypto.randomUUID();
+            localStorage.setItem('voterId', voterId);
+        }
+
         // Fetch initial poll data
         fetch(`${API_URL}/api/polls/${id}`)
             .then(res => res.json())
@@ -71,7 +78,8 @@ const ViewPoll = () => {
         // Optimistic UI update or just wait for server?
         // Let's wait for server but mark local state as voted to prevent double clicks
 
-        socket.emit('vote', { pollId: id, optionId });
+        const voterId = localStorage.getItem('voterId');
+        socket.emit('vote', { pollId: id, optionId, voterId });
 
         // Save to local storage
         const votedPolls = JSON.parse(localStorage.getItem('votedPolls') || '[]');
