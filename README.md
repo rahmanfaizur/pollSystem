@@ -28,5 +28,4 @@ To prevent abuse while ensuring fairness, two layers of checks are implemented:
 - **PostgreSQL Dependency**: Requires a running Postgres instance (configured via `DATABASE_URL`).
 
 ## Deployment
-This project is configured to be deployed as a monorepo (Render/Railway) OR as a split deployment (Vercel + Render).
-See `DEPLOY.md` for detailed instructions on both methods.
+This project is deployed to Vercel and Render as a split deployment (Vercel + Render).
