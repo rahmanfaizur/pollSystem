@@ -134,7 +134,7 @@ io.on('connection', (socket: Socket) => {
     }
 
     socket.on('vote', async ({ pollId, optionId, voterId }: VotePayload) => {
-        // const clientIp = socket.handshake.address; // No longer used for restriction
+        const clientIp = socket.handshake.address; // Now used for restriction
 
         // Check if voterId is present
         if (!voterId) {
@@ -142,14 +142,35 @@ io.on('connection', (socket: Socket) => {
             return;
         }
 
-        // Check fairness by Voter ID
+        // Check fairness
         if (process.env.ALLOW_LOCAL_VOTING !== 'true') {
             try {
-                const checkVote = await pool.query('SELECT id FROM votes WHERE poll_id = $1 AND voter_id = $2', [pollId, voterId]);
-                if (checkVote.rows.length > 0) {
-                    socket.emit('error', 'You have already voted in this poll.');
+                // Mechanism 1: Voter ID (Device-based)
+                const checkVoteId = await pool.query('SELECT id FROM votes WHERE poll_id = $1 AND voter_id = $2', [pollId, voterId]);
+                if (checkVoteId.rows.length > 0) {
+                    socket.emit('error', 'You have already voted on this device.');
                     return;
                 }
+
+                // Mechanism 2: Rate Limiting (Anti-abuse)
+                // Prevents rapid-fire bot voting from the same IP, but allows multiple users on same WiFi
+                const currentTime = Date.now();
+                const windowStart = currentTime - 60000; // 1 minute window
+
+                // Clean up old entries (simplistic approach)
+                // ideally use a proper rate limit library, but keeping it simple for "no constraints"
+
+                const recentVotes = await pool.query(
+                    'SELECT COUNT(*) FROM votes WHERE ip_address = $1 AND created_at > to_timestamp($2 / 1000.0)',
+                    [clientIp, windowStart]
+                );
+
+                const voteCount = parseInt(recentVotes.rows[0].count);
+                if (voteCount >= 10) { // Limit to 10 votes per minute per IP
+                    socket.emit('error', 'Rate limit exceeded. Too many votes from this network.');
+                    return;
+                }
+
             } catch (err) {
                 console.error("Error checking vote:", err);
             }

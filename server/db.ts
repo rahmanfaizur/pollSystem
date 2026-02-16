@@ -47,6 +47,10 @@ export async function init(): Promise<void> {
               ALTER TABLE votes ADD COLUMN voter_id TEXT;
           END IF;
       END $$;
+      -- Optimizations: Add indices for faster lookups
+      CREATE INDEX IF NOT EXISTS idx_votes_poll_id ON votes(poll_id);
+      CREATE INDEX IF NOT EXISTS idx_votes_voter_id ON votes(voter_id);
+      CREATE INDEX IF NOT EXISTS idx_votes_ip_address ON votes(ip_address);
     `);
     console.log("Database initialized successfully");
   } catch (err) {
